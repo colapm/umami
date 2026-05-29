@@ -1,1 +1,1 @@
-This sentense has a deliberate typo.
+This sentence has a deliberate typo.
