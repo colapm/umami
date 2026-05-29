@@ -1,0 +1,34 @@
+name: autofix-e2e-check
+
+# Lightweight CI check used ONLY for autofix end-to-end testing.
+# It fails when a sentinel marker is present anywhere in the tree, and passes
+# once the marker is removed. The autofix agent reads the `::error::` annotation
+# below, removes the offending line(s), pushes a fix commit, and the re-run goes
+# green — exercising the failing-CI autofix path without umami's real build.
+#
+# This file lives on the fork's default branch (master). For `pull_request`
+# events GitHub evaluates the workflow against the merge of head into base, so
+# the check runs on every PR and sees the PR's changes.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  sentinel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail if sentinel marker present
+        run: |
+          # Exclude .git and this workflow file so the check only reacts to the
+          # marker appearing in actual source changes.
+          if grep -rIn "AUTOFIX_SHOULD_REMOVE_THIS" \
+              --exclude-dir=.git \
+              --exclude="autofix-e2e-check.yml" .; then
+            echo "::error::Found sentinel marker AUTOFIX_SHOULD_REMOVE_THIS. Remove the line(s) containing it to make this check pass."
+            exit 1
+          fi
+          echo "No sentinel marker found — check passes."
