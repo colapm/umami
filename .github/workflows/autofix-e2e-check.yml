@@ -1,14 +1,23 @@
 name: autofix-e2e-check
 
-# Lightweight CI check used ONLY for autofix end-to-end testing.
-# It fails when a sentinel marker is present anywhere in the tree, and passes
-# once the marker is removed. The autofix agent reads the `::error::` annotation
-# below, removes the offending line(s), pushes a fix commit, and the re-run goes
-# green — exercising the failing-CI autofix path without umami's real build.
+# Multi-check CI workflow used ONLY for autofix end-to-end testing.
+#
+# Each job below is reported to GitHub as its OWN check run, and they complete
+# at staggered times. This lets the autofix "early CI failure forwarding" path
+# be observed: a fast check can fail and be forwarded to the linked task while
+# slower checks in the same suite are still running (i.e. before the suite
+# settles). All marker-sensitive jobs fail when the sentinel marker is present
+# and pass once it's removed, so the eventual settled /autofix run can still go
+# green after the agent removes the line.
+#
+# Timeline (marker present):
+#   sentinel-fast  ~ t+10s   -> failure   (early forward #1; suite still running)
+#   sentinel-slow  ~ t+90s   -> failure   (early forward #2; suite still running)
+#   sentinel-gate  ~ t+180s  -> success   (keeps the suite unsettled until ~180s)
 #
 # This file lives on the fork's default branch (master). For `pull_request`
 # events GitHub evaluates the workflow against the merge of head into base, so
-# the check runs on every PR and sees the PR's changes.
+# the checks run on every PR and see the PR's changes.
 
 on:
   pull_request:
@@ -17,18 +26,40 @@ permissions:
   contents: read
 
 jobs:
-  sentinel:
+  sentinel-fast:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Fail if sentinel marker present
+      - name: Fail fast if sentinel marker present
         run: |
-          # Exclude .git and this workflow file so the check only reacts to the
-          # marker appearing in actual source changes.
           if grep -rIn "AUTOFIX_SHOULD_REMOVE_THIS" \
               --exclude-dir=.git \
               --exclude="autofix-e2e-check.yml" .; then
-            echo "::error::Found sentinel marker AUTOFIX_SHOULD_REMOVE_THIS. Remove the line(s) containing it to make this check pass."
+            echo "::error::[fast] Found sentinel marker AUTOFIX_SHOULD_REMOVE_THIS. Remove the line(s) containing it to make this check pass."
             exit 1
           fi
-          echo "No sentinel marker found — check passes."
+          echo "No sentinel marker found — fast check passes."
+
+  sentinel-slow:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Delay so this check settles well after the fast one
+        run: sleep 90
+      - name: Fail (slow) if sentinel marker present
+        run: |
+          if grep -rIn "AUTOFIX_SHOULD_REMOVE_THIS" \
+              --exclude-dir=.git \
+              --exclude="autofix-e2e-check.yml" .; then
+            echo "::error::[slow] Found sentinel marker AUTOFIX_SHOULD_REMOVE_THIS. Remove the line(s) containing it to make this check pass."
+            exit 1
+          fi
+          echo "No sentinel marker found — slow check passes."
+
+  sentinel-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hold the suite open so failures forward before it settles
+        run: sleep 180
+      - name: Always pass
+        run: echo "gate passes — its only job is to keep the suite unsettled while faster checks fail."
