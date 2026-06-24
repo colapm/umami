@@ -1,8 +1,15 @@
 name: autofix-e2e-check
 
-# E2E sentinel checks. sentinel-fast is the only marker-sensitive check; the
-# gate just holds the suite open (always passes) so an early failure happens
-# while the suite is still pending. Run A (normal single-check) config.
+# Multi-check CI workflow for autofix E2E testing (staggered completion times).
+# Each job is a separate check run; they finish at different times so the
+# "early CI dispatch before the suite settles" path can be exercised. All
+# marker-sensitive jobs fail when the sentinel marker is present and pass once
+# it is removed.
+#
+# Timeline (marker present):
+#   sentinel-fast  ~ t+10s   -> failure   (early dispatch; suite still running)
+#   sentinel-slow  ~ t+90s   -> failure
+#   sentinel-gate  ~ t+180s  -> success   (keeps the suite unsettled until ~180s)
 
 on:
   pull_request:
@@ -23,10 +30,61 @@ jobs:
           fi
           echo "No sentinel marker found — fast check passes."
 
+  sentinel-slow:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Delay so this settles after the fast check
+        run: sleep 90
+      - name: Fail (slow) if sentinel marker present
+        run: |
+          if grep -rIn "AUTOFIX_SHOULD_REMOVE_THIS" --exclude-dir=.git --exclude="autofix-e2e-check.yml" .; then
+            echo "::error::[slow] Found sentinel marker AUTOFIX_SHOULD_REMOVE_THIS. Remove the line(s) to pass."
+            exit 1
+          fi
+          echo "No sentinel marker found — slow check passes."
+
   sentinel-gate:
     runs-on: ubuntu-latest
     steps:
-      - name: Hold the suite open so the fast failure lands before settle
-        run: sleep 45
+      - name: Hold the suite open while faster checks fail
+        run: sleep 180
       - name: Always pass
-        run: echo "gate passes — keeps the suite unsettled while the fast check fails."
+        run: echo "gate passes — keeps the suite unsettled while faster checks fail."
+
+  # ---------------------------------------------------------------------------
+  # "Stuck" checks for the pile-on / late-settle scenario. Gated on the branch
+  # name and fail UNCONDITIONALLY (no marker to remove), so the autofix agent
+  # cannot make them pass — the PR head stays put through settlement, letting us
+  # observe how the workflow handles more failures landing on the same head
+  # while an early dispatch is in flight, and the late-settling follow-up.
+  # Only run for branches starting with `autofix-e2e-stuck/`.
+  # ---------------------------------------------------------------------------
+  sentinel-stuck-fast:
+    if: startsWith(github.head_ref, 'autofix-e2e-stuck/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail fast (unfixable)
+        run: |
+          echo "::error::[stuck-fast] Intentionally failing E2E check. Not fixable; do not modify."
+          exit 1
+
+  sentinel-stuck-slow:
+    if: startsWith(github.head_ref, 'autofix-e2e-stuck/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delay so this settles after stuck-fast
+        run: sleep 90
+      - name: Fail (slow, unfixable)
+        run: |
+          echo "::error::[stuck-slow] Intentionally failing E2E check. Not fixable; do not modify."
+          exit 1
+
+  sentinel-stuck-gate:
+    if: startsWith(github.head_ref, 'autofix-e2e-stuck/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hold the suite open while stuck checks fail
+        run: sleep 180
+      - name: Always pass
+        run: echo "stuck gate passes — keeps the suite unsettled while stuck checks fail."
