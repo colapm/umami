@@ -1,0 +1,19 @@
+# Long-running processes for umami.
+#
+# The web service reads its configuration from the .env file that
+# `.niteshift/setup` writes, because `pnpm dev` runs `dotenv next dev --turbo`.
+# The postgres container is created with the credentials that file's
+# DATABASE_URL points at.
+services:
+  - name: postgres
+    command: .niteshift/files/postgres-container.sh
+    # Comfortably above the measured shutdown of this container (~2.5s), with
+    # room for a slow checkpoint on a large development database.
+    stopGracePeriod: 30s
+
+  - name: web
+    command: pnpm dev
+    port: 3000
+    auth:
+      type: cookie-file
+      command: node .niteshift/files/preview-login.mjs

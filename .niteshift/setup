@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Fresh-sandbox setup for umami (Next.js + Prisma + PostgreSQL).
+# Finite and idempotent: app env file, database, dependencies, Prisma client,
+# migrations, and the tracker/recorder bundles the dev server serves.
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+log() { echo "[setup] $*"; }
+
+# ---------------------------------------------------------------------------
+# App configuration.
+#
+# The project's own tooling reads .env through dotenv (`pnpm dev` runs
+# `dotenv next dev`, and prisma.config.ts / next.config.ts import
+# 'dotenv/config'), so a single file configures the dev server, the Prisma CLI
+# and any script a task runs by hand. This step runs here rather than in the
+# manifest because `prisma migrate deploy` below needs DATABASE_URL before any
+# service starts.
+#
+# .env is gitignored by the repository. These are fixed local development
+# values whose scope dies with the sandbox: the credentials are the ones the
+# `postgres` service creates, and they match the project's docker-compose.yml.
+# ---------------------------------------------------------------------------
+log "writing .env"
+cat > .env <<'EOF'
+DATABASE_URL=postgresql://umami:umami@localhost:5432/umami
+APP_SECRET=niteshift-local-dev-secret
+DISABLE_TELEMETRY=1
+DISABLE_UPDATES=1
+ALLOWED_FRAME_URLS=https://niteshift.dev https://*.niteshift.dev
+ALLOWED_DEV_ORIGINS=*.preview.niteshift.dev
+EOF
+
+# ---------------------------------------------------------------------------
+# Database: start the declared service early, because migrations need it.
+# ---------------------------------------------------------------------------
+log "starting the postgres service"
+ns services start postgres
+
+# Generous, because the first run of a fresh sandbox also pulls the image.
+log "waiting for postgres to accept connections"
+ready=
+for _ in $(seq 1 90); do
+  if docker exec umami-postgres pg_isready -U umami -d umami >/dev/null 2>&1; then
+    ready=1
+    break
+  fi
+  sleep 2
+done
+if [ -z "$ready" ]; then
+  log "postgres did not become ready; see: ns services logs postgres"
+  exit 1
+fi
+log "postgres is ready"
+
+# ---------------------------------------------------------------------------
+# Application.
+# ---------------------------------------------------------------------------
+log "installing dependencies"
+pnpm install --frozen-lockfile
+
+log "generating the prisma client"
+pnpm build-db
+
+# `prisma migrate deploy` is idempotent and, through migration 01_init, seeds
+# the default admin user (admin / umami).
+log "applying database migrations"
+pnpm update-db
+
+# Written to public/ (gitignored) and served by the dev server at /script.js
+# and /recorder.js, so tracking and session recording work in the sandbox.
+log "building the tracker and recorder scripts"
+pnpm build-tracker
+pnpm build-recorder
+
+log "setup complete"
