@@ -17,6 +17,7 @@ const defaultCurrency = process.env.DEFAULT_CURRENCY || '';
 const defaultLocale = process.env.DEFAULT_LOCALE || '';
 const forceSSL = process.env.FORCE_SSL || '';
 const frameAncestors = process.env.ALLOWED_FRAME_URLS || '';
+const devOrigins = process.env.ALLOWED_DEV_ORIGINS || '';
 const trackerScriptName = process.env.TRACKER_SCRIPT_NAME || '';
 const trackerScriptURL = process.env.TRACKER_SCRIPT_URL || '';
 const selfTrack = process.env.UMAMI_SELF_TRACK || '';
@@ -186,6 +187,9 @@ if (isProd && cloudMode) {
 /** @type {import('next').NextConfig} */
 export default withNextIntl({
   reactStrictMode: false,
+  // Hosts, in addition to localhost, allowed to request dev server resources.
+  // Needed when the dev server is reached through a proxy or tunnel.
+  allowedDevOrigins: devOrigins.split(/[\s,]+/).filter(Boolean),
   env: {
     basePath,
     cloudMode,
