@@ -21,6 +21,10 @@ const trackerScriptName = process.env.TRACKER_SCRIPT_NAME || '';
 const trackerScriptURL = process.env.TRACKER_SCRIPT_URL || '';
 const selfTrack = process.env.UMAMI_SELF_TRACK || '';
 const selfRecord = process.env.UMAMI_SELF_RECORD || '';
+const allowedDevOrigins = (process.env.ALLOWED_DEV_ORIGINS || '')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
 
 const contentSecurityPolicy = `
   default-src 'self';
@@ -197,6 +201,7 @@ export default withNextIntl({
     selfRecord,
   },
   basePath,
+  allowedDevOrigins,
   output: 'standalone',
   typescript: {
     ignoreBuildErrors: true,

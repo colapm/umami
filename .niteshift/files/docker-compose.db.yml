@@ -1,0 +1,10 @@
+# Niteshift override for the repository's Compose stack.
+#
+# Only the `db` service is started here: the Next.js app runs from source on the
+# sandbox host, so Postgres is published on localhost and its restart policy is
+# relaxed so a deliberately stopped container stays stopped.
+services:
+  db:
+    ports:
+      - '5432:5432'
+    restart: unless-stopped

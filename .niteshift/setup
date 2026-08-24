@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+DB_COMPOSE=(docker compose -f docker-compose.yml -f .niteshift/files/docker-compose.db.yml)
+
+echo "==> Installing dependencies"
+pnpm install --frozen-lockfile
+
+echo "==> Writing .env"
+touch .env
+ensure_env() {
+  grep -q "^$1=" .env || printf '%s=%s\n' "$1" "$2" >> .env
+}
+# Matches the credentials in docker-compose.yml; the database only ever exists
+# inside this sandbox.
+ensure_env DATABASE_URL 'postgresql://umami:umami@localhost:5432/umami'
+ensure_env APP_SECRET 'niteshift-sandbox-secret'
+# Lets the Niteshift preview panel embed the app (next.config.ts frame-ancestors).
+ensure_env ALLOWED_FRAME_URLS 'https://niteshift.dev https://*.niteshift.dev'
+# Lets the Next.js dev server serve its dev resources to the preview host.
+ensure_env ALLOWED_DEV_ORIGINS '*.preview.niteshift.dev'
+
+echo "==> Starting Postgres"
+ns services start postgres
+for _ in $(seq 1 60); do
+  if "${DB_COMPOSE[@]}" exec -T db pg_isready -U umami -d umami >/dev/null 2>&1; then
+    ready=1
+    break
+  fi
+  sleep 2
+done
+if [ -z "${ready:-}" ]; then
+  echo "Postgres did not become ready" >&2
+  exit 1
+fi
+
+echo "==> Generating Prisma client"
+pnpm run build-db
+
+echo "==> Applying migrations"
+# Also seeds the default admin/umami login (prisma/migrations/01_init).
+pnpm run check-db
