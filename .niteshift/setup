@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="${NITESHIFT_CHECKOUT_ROOT}/umami"
+database_url="postgresql://umami:umami@127.0.0.1:5432/umami"
+
+cd "$repo_root"
+
+pnpm install --frozen-lockfile
+
+ns services start database
+
+for attempt in {1..30}; do
+  if docker exec niteshift-umami-postgres pg_isready -U umami -d umami >/dev/null 2>&1; then
+    break
+  fi
+
+  if (( attempt == 30 )); then
+    echo "PostgreSQL did not become ready in time." >&2
+    exit 1
+  fi
+
+  sleep 1
+done
+
+export DATABASE_URL="$database_url"
+pnpm run build-db
+pnpm run update-db

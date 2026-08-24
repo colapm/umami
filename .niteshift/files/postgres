@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+container_name="niteshift-umami-postgres"
+
+cleanup() {
+  docker stop --time 15 "$container_name" >/dev/null 2>&1 || true
+}
+
+trap cleanup EXIT INT TERM
+
+docker rm --force "$container_name" >/dev/null 2>&1 || true
+docker run --rm \
+  --name "$container_name" \
+  --label dev.niteshift.repository=umami \
+  --init \
+  --publish 127.0.0.1:5432:5432 \
+  --env POSTGRES_DB=umami \
+  --env POSTGRES_USER=umami \
+  --env POSTGRES_PASSWORD=umami \
+  --volume niteshift-umami-postgres:/var/lib/postgresql/data \
+  postgres:15-alpine &
+container_pid=$!
+
+wait "$container_pid"

@@ -1,0 +1,19 @@
+services:
+  - name: database
+    command: exec .niteshift/files/postgres
+    restart: always
+    stopGracePeriod: 20s
+  - name: web
+    command: exec .niteshift/files/web
+    port: 3000
+    restart: always
+    environment:
+      - name: DATABASE_URL
+        value: postgresql://umami:umami@127.0.0.1:5432/umami
+      - name: APP_SECRET
+        value: niteshift-umami-development-secret
+      - name: ALLOWED_FRAME_URLS
+        value: https://niteshift.dev https://*.niteshift.dev
+    auth:
+      type: magic-dev-login-url
+      path: /__niteshift/login?returnTo={returnTo}

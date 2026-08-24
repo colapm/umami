@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+children=()
+
+cleanup() {
+  for child in "${children[@]}"; do
+    kill -TERM "$child" >/dev/null 2>&1 || true
+  done
+
+  wait "${children[@]}" 2>/dev/null || true
+}
+
+trap cleanup EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+
+env PORT=3001 pnpm dev --hostname 0.0.0.0 &
+children+=("$!")
+
+node .niteshift/files/magic-login.mjs &
+children+=("$!")
+
+caddy run --config .niteshift/files/Caddyfile --adapter caddyfile &
+children+=("$!")
+
+set +e
+wait -n "${children[@]}"
+status=$?
+set -e
+
+exit "$status"
